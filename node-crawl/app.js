@@ -13,36 +13,37 @@ var $;
 
 
 var content = '';
-
+//for test only
+/*
 fs.readFile('./result/class_1481010149483.txt',(err, data) => {
   if( err ) console.error(err);
-  
-  
-
   parse(data);
   
 });
-
-/*
-https.get(rootUrl, (res) => {
-  
-  file = fs.createWriteStream("./result/class_"+Date.now()+".txt");
-  res.on('data', (d) => {
-    console.log("Data incoming...");
-    content += d;
-  });
-
-  res.on('end', () => {
-    parse(content);
-    file.write(content);
+*/
+superagent
+  .get(rootUrl)
+  .end(function(err, res){
+    file = fs.createWriteStream("./result/class_"+Date.now()+".txt");
+    parse(res.text);
+    file.write(res.text);
     file.end();
     console.log("Data Complete...");
-  });
+    /*
+    res.on('data', (d) => {
+      console.log("Data incoming...");
+      content += d;
+    });
 
-}).on('error', (e) => {
-    console.error(e);
+    res.on('end', () => {
+      parse(content);
+      file.write(content);
+      file.end();
+      console.log("Data Complete...");
+    });
+  */
 });
-*/
+
 var dataPool = {};
 var today = new Date();
 function parse(content){
