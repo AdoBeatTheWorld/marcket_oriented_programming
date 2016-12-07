@@ -1,17 +1,14 @@
 var superagent = require("superagent");
 var cheerio = require("cheerio");
 var async = require("async");
-//var url = require("url");
-//var http = require("http");
-//var https = require("https");
+
 var fs = require("fs");
 var path = require("path");
 
 var rootUrl = "https://www.lagou.com";
-//var app = require("express")();
+
 var $;
-
-
+var locations = [encodeURI('全国'),encodeURI('北京'),encodeURI('上海'),encodeURI('杭州'),encodeURI('广州'),encodeURI('深圳'),encodeURI('成都')];
 var content = '';
 //for test only
 /**/
@@ -20,20 +17,29 @@ fs.readFile('./result/class_1481010149483.txt',(err, data) => {
   parse(data);
 });
 /**//*
-superagent
-  .get(rootUrl)
-  .end(function(err, res){
-    file = fs.createWriteStream("./result/class_"+Date.now()+".txt");
-    parse(res.text);
-    file.write(res.text);
-    file.end();
-    //console.log("Data Complete...");
-});
-*/
-var dataPool = {};
+scrawlLocation(0);
+function scrawlLocation(index){
+  superagent
+    .get(rootUrl)
+    .set("index_location_city",locations[index])
+    .end(function(err, res){
+      file = fs.createWriteStream("./result/class_"+Date.now()+".txt");
+      console.log(locations[index]);
+      parse(res.text,locations[index]);
+      file.write(res.text);
+      file.end();
+      if( index + 1 < locations.length){
+        scrawlLocation(index+1);
+      }
+  });
+}
+/**/
+
+/**/
 var today = new Date();
 var curDir;
-function parse(content){
+function parse(content,currentLocation){
+  var dataPool = {};
   var file;
   var todayStr = today.getFullYear()+"-"+today.getMonth()+"-"+today.getDate();
   curDir = "./result/"+todayStr+"/";
@@ -52,15 +58,21 @@ function parse(content){
   $('div[class="menu_box"]').each(function(k,v){
     //console.log("====================");
     mainClass = parserMainClass(v);//menu_main job_hopping
-    file = fs.createWriteStream(curDir+mainClass+".json");
+    //file = fs.createWriteStream(curDir+mainClass+".json");
     classData = [];
     
     parseSecondClass($(v).children()[1], classData);//menu_sub dn
-    
-    file.write(JSON.stringify(classData));
-    file.end();
-  });
 
+    dataPool[mainClass] = classData;
+
+    //file.write(JSON.stringify(classData));
+    //file.end();
+  });
+  
+  file = fs.createWriteStream(curDir+decodeURI(currentLocation)+".json");
+  file.write(JSON.stringify(dataPool));
+  file.end();
+  
   startScrawlCount(curDir);
 }
 
@@ -129,35 +141,75 @@ const JOB_PER_PAGE = 15;
 
 function startScrawlCount(dir){
   var files = fs.readdirSync(dir);
-  files.forEach(function(file){
-    scrawlFile(file,dir);
-  });
+  //files.forEach(function(file){
+    scrawlFile(files,0,dir);
+  //});
   
 }
 
-function scrawlFile(file, dir){
-  //var file = files[index];
+function scrawlFile(files, index,dir){//city
+  var file = files[index];
+  var location = encodeURI(file.split(".")[0]);
   var data;
-  /*
-  fs.open(dir+file, 'r+', (err, fd){
-    if (!err){
-        fs.close(fd,function(){
-            console.log("closed");
-        });
-    }
-  });
-  
-*/
   fs.readFile(dir+file,{encoding:'utf8',flag:"r+"},(err, content) =>{
-    //console.log("now:",dir+file)
-    
     if( err ) console.error(err);
 
     data = JSON.parse(content);
-    var completeCnt = 0;
+    var total = 0;
+    var complete = 0;
+    for (var k in data){
+      total++;
+      var tarr = data[k];
+      var completeCnt = 0;
+      async.eachLimit(tarr,3,function(item, callback){
+        superagent
+          .get(item.href)
+          .set("index_location_city",location)
+          .end(function(err, res){
+            if( err ) console.error(err);
 
+            $ = cheerio.load(res.text);
+            console.log(item.href);
+            var arr = $("#tab_pos").text().match(/\d+[+]?/);
+            if( arr.length != 0){
+              var countStr = arr[0];
+              if(countStr.indexOf("+") == -1){
+                item.count = parseInt(countStr);
+              }else{
+                var arr1 = $(".page_no");
+                var maxIndex = 1;
+                var tempIndex;
+                var len = arr1.length
+                var pageItem;
+                for(var i = 0; i < arr1.length; i++){
+                  pageItem = arr1[i];
+                  tempIndex = parseInt(pageItem.attribs["data-index"]);
+                  maxIndex = tempIndex > maxIndex ? tempIndex : maxIndex;
+                }
+                item.count = maxIndex * JOB_PER_PAGE;
+              }
+            }
+            completeCnt++;
+            callback(err, res);
+          });
+      },function(err){
+        if( err ) console.error(err);
+        complete++;
+        console.log(files[index]+":"+complete+"/"+total);
+        if( complete == total){
+          var wfile = fs.createWriteStream(dir+file);
+          wfile.write(JSON.stringify(data));
+          wfile.end();
+          if( index+1 < files.length){
+            scrawlFile(files,index+1,dir);
+          }
+        }
+      });
+    }
+
+    return;
+    var completeCnt = 0;
     async.eachLimit(data,3,function(item, callback){
-      
       superagent
         .get(item.href)
         .set("index_location_city","%E5%8C%97%E4%BA%AC")
@@ -199,11 +251,6 @@ function scrawlFile(file, dir){
       var wfile = fs.createWriteStream(dir+file);
       wfile.write(JSON.stringify(data));
       wfile.end();
-      /*
-      console.log(files, index);
-      if( files.length > index + 1){
-        scrawlFile(files, index+1);
-      }*/
     });
   });
 }
